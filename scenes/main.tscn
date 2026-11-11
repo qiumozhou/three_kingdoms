@@ -1,0 +1,77 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ground"]
+size = Vector2(960, 64)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_platform"]
+size = Vector2(180, 24)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall"]
+size = Vector2(32, 640)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ceiling"]
+size = Vector2(960, 32)
+
+[node name="Main" type="Node2D"]
+
+[node name="Ground" type="StaticBody2D" parent="."]
+position = Vector2(480, 608)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+shape = SubResource("RectangleShape2D_ground")
+
+[node name="Color" type="Polygon2D" parent="Ground"]
+polygon = PackedVector2Array(-480, -32, 480, -32, 480, 32, -480, 32)
+color = Color(0.22, 0.32, 0.45, 1)
+
+[node name="Platform1" type="StaticBody2D" parent="."]
+position = Vector2(400, 468)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform1"]
+shape = SubResource("RectangleShape2D_platform")
+
+[node name="Color" type="Polygon2D" parent="Platform1"]
+polygon = PackedVector2Array(-90, -12, 90, -12, 90, 12, -90, 12)
+color = Color(0.42, 0.72, 0.58, 1)
+
+[node name="Platform2" type="StaticBody2D" parent="."]
+position = Vector2(680, 348)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform2"]
+shape = SubResource("RectangleShape2D_platform")
+
+[node name="Color" type="Polygon2D" parent="Platform2"]
+polygon = PackedVector2Array(-90, -12, 90, -12, 90, 12, -90, 12)
+color = Color(0.9, 0.66, 0.35, 1)
+
+[node name="LeftWall" type="StaticBody2D" parent="."]
+position = Vector2(-16, 320)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LeftWall"]
+shape = SubResource("RectangleShape2D_wall")
+
+[node name="RightWall" type="StaticBody2D" parent="."]
+position = Vector2(976, 320)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RightWall"]
+shape = SubResource("RectangleShape2D_wall")
+
+[node name="Ceiling" type="StaticBody2D" parent="."]
+position = Vector2(480, -16)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ceiling"]
+shape = SubResource("RectangleShape2D_ceiling")
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+position = Vector2(140, 540)
+
+[node name="Instructions" type="Label" parent="."]
+offset_left = 32.0
+offset_top = 24.0
+offset_right = 928.0
+offset_bottom = 108.0
+theme_override_colors/font_color = Color(0.88, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 22
+text = "DOUBLE JUMP\nA / D or Arrow Keys: Move   |   Space: Jump + Air Jump\nLand to recharge. No third jump!"

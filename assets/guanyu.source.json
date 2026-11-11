@@ -1,0 +1,26 @@
+{
+  "id": "guanyu-idle",
+  "path": "res://assets/guanyu.png",
+  "role": "player texture with procedural leg animation",
+  "source": "OpenAI built-in image_gen",
+  "created_at": "2026-11-06",
+  "generation_note": "AI-generated for this project; no external reference images used. Original PNG copied without pixel edits, preserving alpha and embedded metadata.",
+  "prompt": "Use case: stylized-concept. Asset type: one single transparent PNG character sprite for a Godot 2D side-scrolling platformer, replacing a 32x44 pixel placeholder. Subject: Guan Yu / 关羽, recognizable legendary Chinese general: red face, long black beard, green headcloth and green robe, simplified gold armor, holding his Green Dragon Crescent Blade close to his body. Style: charming chibi 2D game illustration with clean bold dark outlines, compact silhouette and simple flat color clusters readable at about 48x60 screen pixels. View: full body standing idle, three-quarter side view facing right, camera level, orthographic with no ground-plane perspective. Composition: exactly one character, centered, entire head, feet and weapon inside the frame; boots share the same horizontal baseline; character and upright weapon occupy most of a square canvas with a small clear transparent margin. Soft top-left lighting. Actual transparent background with alpha, no floor, no shadow outside the character, no scenery, no text, no labels, no borders, no watermark, no duplicate views. Prioritize iconic face, beard, green clothes and weapon over fine detail. This is one idle sprite, not a sprite sheet.",
+  "verification": {
+    "alpha_checked": true,
+    "scene_references_checked": true,
+    "native_scale_reviewed": true,
+    "in_engine_reviewed": true,
+    "gameplay_checks_passed": 23
+  },
+  "technical": {
+    "dimensions": "1254x1254",
+    "frames": 1,
+    "runtime_animation": "Textured mesh with opposite-phase boot strides, swing-foot lift, torso weight shift, direction mirroring and standing/airborne reset; original PNG unchanged.",
+    "alpha": true,
+    "display_dimensions": "64x64",
+    "filtering": "linear",
+    "anchor": "feet aligned with existing collider bottom",
+    "collision": "existing 32x44 rectangle; blade and cloth are decorative"
+  }
+}
