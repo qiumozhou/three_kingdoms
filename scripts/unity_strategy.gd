@@ -5,6 +5,7 @@ const MONTHS_PER_YEAR := 12
 const TICK_SECONDS := 0.5
 const ARMY_SPEED := 10.0
 const MAX_OFFICERS := 5
+const CITY_CAPACITY := 10
 const COURT := preload("res://scripts/unity_court_rules.gd")
 
 var scenario: UnityScenario
@@ -14,7 +15,6 @@ var roads: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(
 	"res://assets/unity_reference/strategy_roads.json"))
 var road_points := PackedVector2Array()
 var links: Array[Array] = []
-var city_by_node := {}
 var armies: Array[Dictionary] = []
 var month := 0
 var ticks := 0
@@ -28,8 +28,6 @@ func _init(world: UnityScenario, random: RandomNumberGenerator) -> void:
 	for node: Array in roads["nodes"]:
 		road_points.append(Vector2(node[0], node[1]))
 		links.append([])
-	for city in roads["cities"].size():
-		city_by_node[int(roads["cities"][city])] = city
 	var breaks: Dictionary = roads["breaks"]
 	for i in road_points.size():
 		for j in range(i + 1, road_points.size()):
@@ -125,7 +123,7 @@ func form_army(origin: int, officers: Array[int], commander: int,
 		return {}
 	var remaining: Array = city["generals"].duplicate()
 	for id in officers:
-		if not remaining.has(id) or scenario.generals[id]["HealthCur"] <= 0:
+		if not remaining.has(id):
 			return {}
 		remaining.erase(id)
 	if not officers.has(commander) or (not remaining.is_empty() and not remaining.has(prefect)):
@@ -170,6 +168,24 @@ func hold_army(army: Dictionary) -> void:
 	army["garrison"] = true
 	army["victory"] = false
 	army["retreating"] = false
+
+
+func station_excess_officers() -> void:
+	for city_id in scenario.cities.size():
+		var city := scenario.cities[city_id]
+		var roster: Array = city["generals"]
+		while roster.size() > CITY_CAPACITY:
+			var group: Array[int] = []
+			var count := mini(MAX_OFFICERS, roster.size() - CITY_CAPACITY)
+			for index in count:
+				var id: int = roster.pop_back()
+				group.append(id)
+				scenario.generals[id]["City"] = -1
+				if id == city["prefect"]:
+					city["prefect"] = _preferred_officer(roster, city["King"])
+			armies.append({"king": city["King"], "origin": city_id, "target": -1, "city": city_id,
+				"commander": _preferred_officer(group, city["King"]), "officers": group, "prisons": [],
+				"funds": 0, "road": [], "position": point(city_id), "retreating": false, "garrison": true})
 
 
 func advance(delta: float, player: int) -> Dictionary:
@@ -227,8 +243,8 @@ func _move_armies(delta: float, player: int) -> Dictionary:
 				break
 			budget -= distance
 			position = destination
-			if city_by_node.has(node):
-				city = city_by_node[node]
+			city = _city_in_range(position, 5.0)
+			if city >= 0:
 				break
 			path.pop_front()
 		army["position"] = position
@@ -247,20 +263,16 @@ func _move_armies(delta: float, player: int) -> Dictionary:
 				break
 		if not armies.has(army) or army["retreating"] and army["road"] != path:
 			continue
-		if not garrison and not army["retreating"] and not path.is_empty():
-			var nearby := _city_in_range(position, 5.0)
-			if nearby >= 0:
-				var defender: int = scenario.cities[nearby]["King"]
-				if defender >= 0 and defender != army["king"]:
-					if defender == player or army["king"] == player:
-						return {"army": army, "city": nearby}
-					_resolve_computer_attack(army, nearby)
-					continue
 		if city < 0:
 			continue
 		path.pop_front()
 		army["city"] = city
 		var owner: int = scenario.cities[city]["King"]
+		if owner >= 0 and owner != army["king"] and not army["retreating"]:
+			if owner == player or army["king"] == player:
+				return {"army": army, "city": city}
+			_resolve_computer_attack(army, city)
+			continue
 		if path.is_empty():
 			if owner < 0 or owner == army["king"]:
 				enter_city(army, city)
@@ -566,7 +578,7 @@ func enter_city(army: Dictionary, city_id: int, simulated := true) -> void:
 		for id: int in city["prisons"]:
 			scenario.generals[id]["prisonerIdx"] = owner
 		_evacuate(city_id, evacuating)
-	var count := mini(army["officers"].size(), maxi(0, 10 - city["generals"].size()))
+	var count := mini(army["officers"].size(), maxi(0, CITY_CAPACITY - city["generals"].size()))
 	for index in range(count - 1, -1, -1):
 		var id: int = army["officers"][index]
 		army["officers"].remove_at(index)

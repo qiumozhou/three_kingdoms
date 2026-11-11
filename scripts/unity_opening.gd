@@ -659,6 +659,7 @@ func _end_court() -> void:
 	if computer_court_year < year:
 		court.run_computer_court(king_id)
 		computer_court_year = year
+	strategy.station_excess_officers()
 	if not strategy_started:
 		strategy_started = true
 		var ruler: int = scenario.kings[king_id]["GeneralIdx"]
@@ -666,7 +667,7 @@ func _end_court() -> void:
 		if city >= 0:
 			_show_city(city)
 			return
-	_show_strategy("")
+	_show_strategy("", true)
 
 
 func _advance_year() -> void:
@@ -878,7 +879,7 @@ func _update_strategy_map() -> void:
 			var color := Color("#ffe581") if owner == king_id else (Color.WHITE if owner >= 0 else Color("#c9c9c9"))
 			flag.add_theme_color_override("font_color", color)
 			var sprite: AnimatedSprite2D = flag.get_child(0)
-			var animation := _flag_animation(scenario.kings[owner]["Name"].strip_edges()) if owner >= 0 else &"default"
+			var animation := _flag_animation(scenario.kings[owner].get("Name", "").strip_edges()) if owner >= 0 else &"default"
 			sprite.visible = animation != &"default" and flag_frames.has_animation(animation)
 			if sprite.visible:
 				sprite.play(animation)
@@ -931,7 +932,7 @@ func _update_army_marker(marker: AnimatedSprite2D, army: Dictionary) -> void:
 		marker.frame = direction_index
 		marker.pause()
 	var flag: AnimatedSprite2D = marker.get_child(0)
-	var faction := _flag_animation(scenario.kings[army["king"]]["Name"].strip_edges())
+	var faction := _flag_animation(scenario.kings[army["king"]].get("Name", "").strip_edges())
 	flag.visible = flag_frames.has_animation(faction)
 	if flag.visible:
 		flag.flip_h = marker.flip_h
@@ -989,7 +990,7 @@ func _show_city(id: int) -> void:
 		troops += int(scenario.generals[officer]["SoldierCur"] + scenario.generals[officer]["KnightCur"])
 	var owner: int = city["King"]
 	var captions := ["时间", "%d年" % year, "太守", general_names[prefect].strip_edges() if prefect >= 0 else "",
-		"君主", scenario.kings[owner]["Name"] if owner >= 0 else "", "城名", city["Name"],
+		"君主", scenario.kings[owner].get("Name", "盗贼") if owner >= 0 else "", "城名", city["Name"],
 		"防御力", str(city["Defense"]), "人口", str(city["Population"]), "金钱", str(city["Money"])]
 	for row in 7:
 		_court_text(details, captions[row * 2], Vector2(381, 138 + row * 45))
@@ -1116,9 +1117,6 @@ func _draw_expedition(origin: int) -> void:
 			row.modulate = Color.GREEN if draft_officers.has(id) else Color.WHITE
 			confirm.disabled = draft_officers.is_empty())
 		button.self_modulate.a = 0.0
-		button.disabled = general["HealthCur"] <= 0
-		if button.disabled:
-			row.modulate = Color.GRAY
 
 
 func _strategy_panel(offset: Vector2) -> Control:
@@ -1383,8 +1381,8 @@ func _begin_encounter(army: Dictionary, target: int, opponent: Dictionary = {}) 
 	encounter_city = target
 	encounter_player = -1
 	encounter_positions.clear()
-	attackers_left.assign(_encounter_roster(true).filter(func(id: int) -> bool: return scenario.generals[id]["HealthCur"] > 0))
-	defenders_left.assign(_encounter_roster(false).filter(func(id: int) -> bool: return scenario.generals[id]["HealthCur"] > 0))
+	attackers_left.assign(_encounter_roster(true))
+	defenders_left.assign(_encounter_roster(false))
 	var commander := general_names[army["commander"]].strip_edges()
 	var message: String
 	if target == -1:
@@ -1583,7 +1581,7 @@ func _battle_selection_bar(parent: Control, owner: int, officers: Array, center:
 	var troops := 0
 	for id in officers:
 		troops += int(scenario.generals[id]["SoldierCur"] + scenario.generals[id]["KnightCur"])
-	_court_text(parent, scenario.kings[owner]["Name"] + "军", center - Vector2(120, 0))
+	_court_text(parent, scenario.kings[owner].get("Name", "盗贼") + "军", center - Vector2(120, 0))
 	_source_lines(parent, "%d\n%d" % [officers.size(), troops], center + Vector2(75, -29))
 
 
@@ -1643,7 +1641,9 @@ func _confirm_retreat(attacking: bool) -> void:
 
 
 func _retreat_encounter() -> void:
-	_show_encounter_report("情况不妙全军撤退....", _resolve_retreat_encounter)
+	var attacking: bool = encounter_army["king"] == king_id
+	_show_encounter_report("情况不妙全军撤退....",
+		_show_war_captures.bind(attacking, false, _resolve_retreat_encounter))
 
 
 func _resolve_retreat_encounter() -> void:
@@ -1652,10 +1652,6 @@ func _resolve_retreat_encounter() -> void:
 			strategy.reward_force(scenario.cities[encounter_city]["generals"], false)
 			strategy.retreat(encounter_army, encounter_city)
 		else:
-			var defenders: Array[int] = []
-			defenders.assign(scenario.cities[encounter_city]["generals"])
-			scenario.cities[encounter_city]["generals"].clear()
-			strategy._evacuate(encounter_city, defenders)
 			strategy.enter_city(encounter_army, encounter_city, false)
 	else:
 		strategy.finish_field(encounter_opponent, encounter_army)
@@ -1802,14 +1798,45 @@ func _resolve_duel(victory: bool, player: int, enemy: int, attacking: bool, esca
 	if finished:
 		var won: bool = not attackers_left.is_empty() if attacking else not defenders_left.is_empty()
 		message = "我军大获全胜！！" if won else "我军战败...."
+		speaker = _encounter_commander(attacking)
+		_show_battle_selection(attacking)
+		_show_encounter_report(message, _show_war_captures.bind(attacking, won, _show_encounter), speaker)
+		return
 	elif victory:
 		message = "我军大胜！俘虏敌将%s！" % general_names[loser].strip_edges() if scenario.generals[loser]["prisonerIdx"] == king_id else "我军胜利！！"
+		speaker = _encounter_commander(attacking)
 	else:
 		message = "我战败被俘了...." if scenario.generals[loser]["prisonerIdx"] == winner_info["King"] else "很遗憾，我战败了...."
-	if finished or victory:
-		speaker = _encounter_commander(attacking)
+	var enemies := defenders_left if attacking else attackers_left
+	encounter_enemy = enemies[rng.randi_range(0, enemies.size() - 1)]
 	_show_battle_selection(attacking)
-	_show_encounter_report(message, _show_encounter, speaker)
+	_show_encounter_report(message, _show_battle_selection.bind(attacking), speaker)
+
+
+func _show_war_captures(attacking: bool, won: bool, proceed: Callable) -> void:
+	var winners_attack := attacking == won
+	var messages: Array[String] = []
+	var released := false
+	for id in _encounter_roster(winners_attack):
+		if scenario.generals[id]["prisonerIdx"] >= 0:
+			scenario.generals[id]["prisonerIdx"] = -1
+			released = true
+	if released:
+		messages.append("我们被俘的武将救回来了!" if won else "俘虏的武将逃回去了....")
+	for id in _encounter_roster(not winners_attack):
+		if scenario.generals[id]["prisonerIdx"] >= 0:
+			var name_text := general_names[id].strip_edges()
+			messages.append("我们俘虏了敌方武将%s！" % name_text if won else "%s将军被敌军俘虏了！！" % name_text)
+	_continue_war_report(attacking, messages, proceed)
+
+
+func _continue_war_report(attacking: bool, messages: Array[String], proceed: Callable) -> void:
+	if messages.is_empty():
+		proceed.call()
+		return
+	_show_battle_selection(attacking)
+	var message: String = messages.pop_front()
+	_show_encounter_report(message, _continue_war_report.bind(attacking, messages, proceed))
 
 
 func _show_encounter_report(message: String, proceed: Callable, speaker := -1) -> void:

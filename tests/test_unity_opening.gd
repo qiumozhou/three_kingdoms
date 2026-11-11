@@ -46,6 +46,14 @@ func _initialize() -> void:
 	_advance_dialogue(opening)
 	_press(opening.menu, "返回")
 	await _test_expedition(opening, scenario)
+	var neutral := scenario.kings.size() - 1
+	var original_owner: int = scenario.cities[7]["King"]
+	scenario.cities[7]["King"] = neutral
+	opening._update_strategy_map()
+	opening._show_city(7)
+	_expect(opening.menu.get_child_count() > 0, "a bandit city remains selectable after its ruler is defeated")
+	scenario.cities[7]["King"] = original_owner
+	opening._show_strategy("", true)
 	opening.strategy.month = 11
 	opening.strategy.ticks = 9
 	opening._step_strategy(0.5)
@@ -258,7 +266,17 @@ func _test_expedition(opening: Control, scenario: UnityScenario) -> void:
 		opening.battle._physics_process(0.0)
 		await process_frame
 		_advance_dialogue(opening)
+		var last_duel: bool = opening.defenders_left.is_empty()
+		if last_duel:
+			attacker["prisonerIdx"] = previous_owner
 		_advance_dialogue(opening)
+		if last_duel:
+			_expect(attacker["prisonerIdx"] == -1 and opening.menu.get_child(0).text == "我们被俘的武将救回来了!",
+				"the winning side releases its previously captured officers before settlement")
+			for report in 8:
+				if not opening.has_node("DialogueAdvance"):
+					break
+				_advance_dialogue(opening)
 	_expect(target["King"] == 0 and attacker["City"] == 8 and target["prefect"] == 98,
 		"clearing defenders transfers city and places the attacker there")
 	_expect(not scenario.kings[previous_owner]["cities"].has(8) and scenario.kings[0]["cities"].has(8),

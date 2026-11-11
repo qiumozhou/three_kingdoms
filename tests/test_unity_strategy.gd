@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_army_state_timing()
 	_test_retreat_to_lost_city()
 	_test_garrison_evacuation()
+	_test_court_overflow()
 	_test_outcomes()
 	print("Unity strategy tests: %d failure(s)" % failures)
 	quit(0 if failures == 0 else 1)
@@ -184,6 +185,25 @@ func _test_garrison_evacuation() -> void:
 	_expect(strategy.armies.size() == 2 and strategy.armies[0]["officers"] == [87, 58, 52, 139, 98]
 		and strategy.armies[1]["officers"] == [93, 56] and strategy.armies[0]["commander"] == 98,
 		"the defeated garrison evacuates from the roster's end in five-officer groups and gives the ruler command")
+
+
+func _test_court_overflow() -> void:
+	var world := UnityScenario.load_scenario(1)
+	var strategy := STRATEGY.new(world, RandomNumberGenerator.new())
+	var city := world.cities[9]
+	var excess: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7]
+	for id in excess:
+		world.generals[id]["King"] = 0
+		world.generals[id]["City"] = 9
+	city["generals"].append_array(excess)
+	city["prefect"] = 7
+	strategy.station_excess_officers()
+	_expect(city["generals"].size() == 10 and city["prefect"] == 98,
+		"the strategy transition keeps the first ten officers and replaces the removed prefect")
+	_expect(strategy.armies.size() == 2 and strategy.armies[0]["officers"] == [7, 6, 5, 4, 3]
+		and strategy.armies[1]["officers"] == [2] and strategy.armies[0]["target"] == -1
+		and strategy.armies[0]["garrison"] and world.generals[7]["City"] == -1,
+		"overflow forms stationary groups of five at the city in Unity roster order")
 
 
 func _test_computer_casualties() -> void:
