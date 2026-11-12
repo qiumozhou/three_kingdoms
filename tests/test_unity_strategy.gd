@@ -16,6 +16,8 @@ func _initialize() -> void:
 	_test_routes(strategy)
 	_test_march(world, strategy)
 	_test_computer_reinforcement()
+	_test_original_army_orders()
+	_test_computer_garrison_admission()
 	_test_computer_casualties()
 	_test_computer_damage_boundaries()
 	_test_field()
@@ -112,6 +114,60 @@ func _test_computer_reinforcement() -> void:
 		and army["commander"] == 56 and army["prisons"] == [139] and army["funds"] == 395
 		and source["Money"] == 500 and source["generals"] == [98],
 		"reinforcement selects from the end of the roster and keeps the original dispatch funding behavior")
+
+
+func _test_original_army_orders() -> void:
+	var source: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(
+		"res://tests/fixtures/unity_190_army_orders.json"))
+	var world := UnityScenario.load_scenario(1)
+	var strategy := STRATEGY.new(world, RandomNumberGenerator.new())
+	var rolls: Array = source["rolls"]
+	strategy._computer_range = func(low: int, high: int) -> int:
+		if rolls.is_empty():
+			_expect(false, "Godot requested an extra dispatch roll")
+			return low
+		var roll: Array = rolls.pop_front()
+		# Unity's upper bound is exclusive, except an empty range returns its lower bound.
+		_expect(int(roll[1]) == low and maxi(low, int(roll[2]) - 1) == high,
+			"computer orders request the original random range")
+		return int(roll[3])
+	var officers: Array[int] = [93]
+	strategy.dispatch(9, 8, officers, 93, 98, 0, false)
+	var actual: Array[String] = []
+	for month in [1, 2]:
+		_expect(strategy.advance(5.0, 0).is_empty(), "no battle interrupts the opening dispatch trace")
+		for army in strategy.armies:
+			actual.append("%d,%d,%d,%d,%d,%d,%s" % [month, army["king"], army["origin"],
+				army["target"], army["commander"], army["funds"], ":".join(PackedStringArray(army["officers"]))])
+	_expect(rolls.is_empty() and actual == source["armies"],
+		"the first two months match Unity's officer order, origin, destination, commander and funds")
+
+
+func _test_computer_garrison_admission() -> void:
+	var world := UnityScenario.load_scenario(1)
+	var strategy := STRATEGY.new(world, RandomNumberGenerator.new())
+	var source := world.cities[8]
+	var destination := world.cities[9]
+	var owner: int = source["King"]
+	var officers: Array = source["generals"].duplicate()
+	var commander: int = source["prefect"]
+	officers.erase(commander)
+	var first: Array[int] = [officers[0]]
+	var second: Array[int] = [officers[1]]
+	var a: Dictionary = strategy.form_army(8, first, first[0], commander, 10, false)
+	var b: Dictionary = strategy.form_army(8, second, second[0], commander, 20, false)
+	a["position"] = strategy.point(9)
+	b["position"] = strategy.point(9)
+	var money: int = destination["Money"]
+	strategy._monthly_actions(0)
+	_expect(destination["King"] == 0 and destination["Money"] == money + 10
+		and destination["generals"].has(first[0]) and world.generals[first[0]]["King"] == owner,
+		"Unity admits a nearby computer garrison without changing city or officer allegiance")
+	_expect(strategy.armies.has(b) and not strategy.armies.has(a) and world.generals[second[0]]["City"] == -1,
+		"removing a computer garrison leaves the next one for a later month")
+	strategy._monthly_actions(0)
+	_expect(destination["generals"].has(second[0]) and destination["Money"] == money + 30,
+		"the remaining garrison enters on the next monthly update")
 
 
 func _test_field() -> void:
@@ -266,7 +322,7 @@ func _test_outcomes() -> void:
 	opening.king_id = 0
 	for city: Dictionary in opening.scenario.cities:
 		city["King"] = 0
-	opening._show_strategy("")
+	opening._show_strategy("", true, true)
 	var progress := ConfigFile.new()
 	_expect(progress.load(path) == OK and progress.get_value("progress", "GamePass") == 1,
 		"owning every city records the original game-clear unlock")
@@ -283,7 +339,7 @@ func _test_outcomes() -> void:
 	_expect(opening.menu.get_child(1).text == "于西元190年，曹操统一了全中国。",
 		"victory records the year and the selected ruler before credits")
 	opening.scenario.kings[0]["Active"] = 0
-	opening._show_strategy("")
+	opening._show_strategy("", true, true)
 	_expect(opening.strategy.outcome(0) == -1 and opening.menu.get_child(0).text == "很遗憾，统一中国的梦想无法实现了....",
 		"an eliminated player faction reaches the defeat ending")
 	opening.queue_free()

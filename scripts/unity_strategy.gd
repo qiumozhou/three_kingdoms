@@ -10,6 +10,7 @@ const COURT := preload("res://scripts/unity_court_rules.gd")
 
 var scenario: UnityScenario
 var rng: RandomNumberGenerator
+var _computer_range: Callable
 var court: RefCounted
 var roads: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(
 	"res://assets/unity_reference/strategy_roads.json"))
@@ -24,6 +25,7 @@ var elapsed := 0.0
 func _init(world: UnityScenario, random: RandomNumberGenerator) -> void:
 	scenario = world
 	rng = random
+	_computer_range = rng.randi_range
 	court = COURT.new(world, random)
 	for node: Array in roads["nodes"]:
 		road_points.append(Vector2(node[0], node[1]))
@@ -306,12 +308,16 @@ func _monthly_actions(player: int) -> void:
 		general["ManaCur"] = mini(general["ManaMax"], general["ManaCur"] + int(general["Intellect"]) / 20)
 	for city in scenario.cities:
 		_computer_city_act(city, player)
-	for army in armies.duplicate():
+	# Unity visits the live list, so removing a fully admitted army advances past its successor.
+	var index := 0
+	while index < armies.size():
+		var army := armies[index]
 		if army.get("garrison", false) and army["king"] != player:
 			var position: Vector2 = army["position"]
 			var city := _city_in_range(position, 30.0)
-			if city >= 0 and scenario.cities[city]["King"] == army["king"]:
-				enter_city(army, city)
+			if city >= 0:
+				_join_city(army, city)
+		index += 1
 
 
 func _computer_city_act(city: Dictionary, player: int) -> void:
@@ -333,22 +339,22 @@ func _computer_city_act(city: Dictionary, player: int) -> void:
 		var neighbor := scenario.cities[target]
 		var garrison: int = neighbor["generals"].size()
 		if neighbor["King"] == owner:
-			if ready < 8 and garrison > 2 and rng.randi_range(0, 99) > 88:
-				_computer_dispatch(target, origin, rng.randi_range(1, garrison - 1))
+			if ready < 8 and garrison > 2 and _computer_range.call(0, 99) > 88:
+				_computer_dispatch(target, origin, _computer_range.call(1, garrison - 1))
 				break
 		elif neighbor["King"] == -1:
-			if ready > 3 and rng.randi_range(0, 99) > 80:
-				_computer_dispatch(origin, target, rng.randi_range(1, city["generals"].size() - 1))
+			if ready > 3 and _computer_range.call(0, 99) > 80:
+				_computer_dispatch(origin, target, _computer_range.call(1, city["generals"].size() - 1))
 				break
-		elif ready > 2 and rng.randi_range(0, 99) > 88:
+		elif ready > 2 and _computer_range.call(0, 99) > 88:
 			var difference := ready - garrison
 			if difference >= 2:
-				_computer_dispatch(origin, target, rng.randi_range(garrison + 1, city["generals"].size() - 1))
+				_computer_dispatch(origin, target, _computer_range.call(garrison + 1, city["generals"].size() - 1))
 				break
-			if difference > 0 and rng.randi_range(0, 99) > 50:
+			if difference > 0 and _computer_range.call(0, 99) > 50:
 				_computer_dispatch(origin, target, garrison)
 				break
-			if difference == 0 and rng.randi_range(0, 99) > 88:
+			if difference == 0 and _computer_range.call(0, 99) > 88:
 				_computer_dispatch(origin, target, garrison - 1)
 				break
 
@@ -356,7 +362,7 @@ func _computer_city_act(city: Dictionary, player: int) -> void:
 func _computer_dispatch(origin: int, target: int, count: int) -> void:
 	var city := scenario.cities[origin]
 	for offset in range(0, count, MAX_OFFICERS):
-		var funds := rng.randi_range(0, maxi(0, city["Money"] - 1))
+		var funds: int = _computer_range.call(0, maxi(0, city["Money"] - 1))
 		var officers: Array[int] = []
 		var remaining: Array = city["generals"].duplicate()
 		var prefect: int = city["prefect"]
@@ -364,7 +370,7 @@ func _computer_dispatch(origin: int, target: int, count: int) -> void:
 			var id: int = remaining[index]
 			if scenario.generals[id]["HealthCur"] <= 50:
 				continue
-			if id == prefect and rng.randi_range(0, 99) <= 50:
+			if id == prefect and _computer_range.call(0, 99) <= 50:
 				continue
 			officers.append(id)
 			remaining.remove_at(index)
@@ -372,7 +378,7 @@ func _computer_dispatch(origin: int, target: int, count: int) -> void:
 				break
 		if officers.is_empty():
 			continue
-		var take_prisoners: bool = not city["prisons"].is_empty() and rng.randi_range(0, 99) > 60
+		var take_prisoners: bool = not city["prisons"].is_empty() and _computer_range.call(0, 99) > 60
 		var commander := _preferred_officer(officers, city["King"])
 		if officers.has(prefect):
 			commander = prefect
@@ -391,6 +397,14 @@ func _preferred_officer(officers: Array, owner: int) -> int:
 		if scenario.generals[id]["Strength"] > scenario.generals[preferred]["Strength"]:
 			preferred = id
 	return preferred
+
+
+func _army_commander(army: Dictionary) -> int:
+	var ruler: int = scenario.kings[army["king"]]["GeneralIdx"]
+	for id: int in army["officers"]:
+		if id == army["commander"] or id == ruler:
+			return id
+	return _preferred_officer(army["officers"], army["king"])
 
 
 func _resolve_computer_attack(army: Dictionary, city_id: int) -> void:
@@ -497,8 +511,7 @@ func finish_field(winner: Dictionary, loser: Dictionary, simulated := false) -> 
 		winner["funds"] += loser["funds"]
 		armies.erase(loser)
 		return
-	if not loser["officers"].has(loser["commander"]):
-		loser["commander"] = loser["officers"][0]
+	loser["commander"] = _army_commander(loser)
 	var destination: int = loser["origin"]
 	loser["origin"] = loser["target"] if loser["target"] >= 0 else loser["city"]
 	loser["road"] = _route_from(loser["position"], destination)
@@ -578,18 +591,27 @@ func enter_city(army: Dictionary, city_id: int, simulated := true) -> void:
 		for id: int in city["prisons"]:
 			scenario.generals[id]["prisonerIdx"] = owner
 		_evacuate(city_id, evacuating)
+	_join_city(army, city_id, old != owner)
+
+
+func _join_city(army: Dictionary, city_id: int, conquered := false) -> void:
+	var city := scenario.cities[city_id]
+	var owner: int = army["king"]
 	var count := mini(army["officers"].size(), maxi(0, CITY_CAPACITY - city["generals"].size()))
-	for index in range(count - 1, -1, -1):
-		var id: int = army["officers"][index]
-		army["officers"].remove_at(index)
+	var joining: Array = army["officers"].slice(0, count)
+	if not conquered:
+		joining.reverse()
+	for id: int in joining:
+		army["officers"].erase(id)
 		city["generals"].append(id)
 		scenario.generals[id]["City"] = city_id
-		scenario.generals[id]["prisonerIdx"] = -1
 		scenario.generals[id]["escape"] = 0
-		if id == scenario.kings[owner]["GeneralIdx"]:
+		if conquered:
+			scenario.generals[id]["prisonerIdx"] = -1
+		elif id == scenario.kings[owner]["GeneralIdx"]:
 			city["prefect"] = id
 	if not army["officers"].is_empty():
-		army["commander"] = _preferred_officer(army["officers"], owner)
+		army["commander"] = _army_commander(army)
 		hold_army(army)
 		return
 	if city["prefect"] == -1:
@@ -597,7 +619,8 @@ func enter_city(army: Dictionary, city_id: int, simulated := true) -> void:
 	for id: int in army["prisons"]:
 		city["prisons"].append(id)
 		scenario.generals[id]["City"] = city_id
-		scenario.generals[id]["prisonerIdx"] = owner
+		if conquered:
+			scenario.generals[id]["prisonerIdx"] = owner
 	city["Money"] += army["funds"]
 	armies.erase(army)
 
@@ -644,8 +667,7 @@ func retreat(army: Dictionary, from_city: int) -> void:
 			scenario.cities[from_city]["Money"] += army["funds"]
 		armies.erase(army)
 		return
-	if not army["officers"].has(army["commander"]):
-		army["commander"] = army["officers"][0]
+	army["commander"] = _army_commander(army)
 	if destination == from_city:
 		enter_city(army, destination)
 	else:

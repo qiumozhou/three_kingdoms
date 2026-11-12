@@ -85,11 +85,18 @@ func _test_campaign_end(opening: Control, scenario: UnityScenario) -> void:
 	_expect(not army.is_empty(), "Cao Cao can send the final expedition")
 	opening._show_strategy("", true)
 	opening._step_strategy(opening.strategy.route_distance(9, 6) / 10.0 + 0.1)
-	_expect(scenario.cities[6]["King"] == 0 and opening.game_passed,
-		"arrival in the final city triggers victory and unlocks scenarios")
+	_expect(scenario.cities[6]["King"] == 0 and not opening.game_passed,
+		"taking the final empty city leaves the map running until the next strategy scene")
+	opening.strategy.month = 11
+	opening.strategy.ticks = 9
+	opening._step_strategy(0.5)
+	_advance_dialogue(opening)
+	_press(opening.menu, "内政终了")
+	_press(opening.details, "确定")
+	_expect(opening.game_passed, "returning to strategy unlocks scenarios after the final city")
 	_advance_dialogue(opening)
 	var record := opening.menu.get_child(1) as Label
-	_expect(record != null and record.text == "于西元191年，曹操统一了全中国。",
+	_expect(record != null and record.text == "于西元192年，曹操统一了全中国。",
 		"the victory presentation uses the year and ruler of this playthrough")
 	if record == null:
 		return
@@ -169,7 +176,12 @@ func _test_expedition(opening: Control, scenario: UnityScenario) -> void:
 	_advance_dialogue(opening)
 	_expect(opening.menu.get_child(0).text == "我军战败....",
 		"losing the last officer displays the original campaign report before returning to the map")
+	opening.strategy.elapsed = 0.35
+	var month: int = opening.strategy.month
+	var ticks: int = opening.strategy.ticks
 	_advance_dialogue(opening)
+	_expect(opening.strategy.elapsed == 0.0 and opening.strategy.month == month and opening.strategy.ticks == ticks,
+		"returning from battle restarts the partial reserve tick without losing the calendar")
 	_expect(opening.battle == null and target["King"] == previous_owner
 		and defeated_attacker["City"] == -1 and defeated_attacker["SoldierCur"] == troops
 		and opening.strategy_running, "retreat preserves surviving troops and resumes the strategy clock")

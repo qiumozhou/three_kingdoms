@@ -667,7 +667,7 @@ func _end_court() -> void:
 		if city >= 0:
 			_show_city(city)
 			return
-	_show_strategy("", true)
+	_show_strategy("", true, true)
 
 
 func _advance_year() -> void:
@@ -754,17 +754,17 @@ func _step_strategy(delta: float) -> void:
 		_show_strategy_dialogue("内政时间到了....", _advance_year)
 	elif event.has("army"):
 		_begin_encounter(event["army"], event.get("city", -1), event.get("opponent", {}))
-	elif strategy.outcome(king_id) != 0:
-		_show_ending(strategy.outcome(king_id) > 0)
 	else:
 		_update_strategy_map()
 
 
-func _show_strategy(message: String, running := false) -> void:
-	var ending: int = strategy.outcome(king_id)
-	if ending != 0:
-		_show_ending(ending > 0)
-		return
+func _show_strategy(message: String, running := false, entering_scene := false) -> void:
+	if entering_scene:
+		# Unity's Strategy.Start checks the ending on scene entry, including after battles and court.
+		var ending: int = strategy.outcome(king_id)
+		if ending != 0:
+			_show_ending(ending > 0)
+			return
 	_zoom_map(_build_background(MAP))
 	strategy_running = running
 	map_interactive = true
@@ -1439,16 +1439,16 @@ func _show_encounter() -> void:
 			var won := not attackers_left.is_empty()
 			strategy.finish_field(encounter_army if won else encounter_opponent,
 				encounter_opponent if won else encounter_army)
-			_show_strategy("野战胜利" if won else "野战败退", true)
+			_resume_strategy_after_battle("野战胜利" if won else "野战败退")
 			return
 		var city_name: String = scenario.cities[encounter_city]["Name"]
 		if not attackers_left.is_empty():
 			strategy.enter_city(encounter_army, encounter_city, false)
-			_show_strategy("攻克 %s" % city_name, true)
+			_resume_strategy_after_battle("攻克 %s" % city_name)
 		else:
 			strategy.reward_force(scenario.cities[encounter_city]["generals"], false)
 			strategy.retreat(encounter_army, encounter_city)
-			_show_strategy("进攻%s的军队败退" % city_name, true)
+			_resume_strategy_after_battle("进攻%s的军队败退" % city_name)
 		return
 	var attacking: bool = encounter_army["king"] == king_id
 	var mine: Array[int] = attackers_left if attacking else defenders_left
@@ -1655,7 +1655,13 @@ func _resolve_retreat_encounter() -> void:
 			strategy.enter_city(encounter_army, encounter_city, false)
 	else:
 		strategy.finish_field(encounter_opponent, encounter_army)
-	_show_strategy("我军撤退", true)
+	_resume_strategy_after_battle("我军撤退")
+
+
+func _resume_strategy_after_battle(message: String) -> void:
+	# Unity recreates HistoryTimeController on return while keeping the month and completed ticks.
+	strategy.elapsed = 0.0
+	_show_strategy(message, true, true)
 
 
 func _start_duel(player: int, enemy: int, attacking: bool) -> void:
@@ -1882,21 +1888,26 @@ func _show_victory_record() -> void:
 	var exit := dialogue.create_tween()
 	exit.tween_property(dialogue, "position:y", 720.0, 0.4)
 	exit.tween_callback(dialogue.queue_free)
-	var shade := ColorRect.new()
-	shade.color = Color(0.0, 0.0, 0.18, 0.75)
-	add_child(shade)
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var panel := Control.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(panel)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var frame := preload("res://assets/unity_reference/328-1.png")
-	_place_texture(shade, frame, Vector2(480, 360), frame.get_size() * 3.0)
+	var border := _place_texture(panel, frame, Vector2(480, 360), frame.get_size() * 3.0)
+	var fill := _place_texture(border, preload("res://assets/unity_reference/UI_BG.png"),
+		border.size / 2.0, Vector2(555, 135))
+	fill.stretch_mode = TextureRect.STRETCH_SCALE
+	fill.self_modulate.a = 0.5
+	fill.show_behind_parent = true
 	var text := Label.new()
-	text.position = Vector2(225, 328)
-	text.size = Vector2(510, 64)
+	text.position = Vector2(225, 335)
+	text.size = Vector2(510, 50)
 	text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	text.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	text.add_theme_font_size_override("font_size", 22)
+	text.add_theme_font_override("font", court_font)
+	text.add_theme_font_size_override("font_size", 33)
 	text.text = "于西元%d年，%s统一了全中国。" % [year, scenario.kings[king_id]["Name"].strip_edges()]
-	shade.add_child(text)
-	menu = shade
+	panel.add_child(text)
+	menu = panel
 	_reveal_text(text, 0.5, _show_credits)
 
 
